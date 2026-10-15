@@ -64,7 +64,7 @@ OCSF record the moment it is made, with the denials in red.
 
 <!-- Recorded with tools/record-live.sh (see agent/demo/README.md); to replace
      it, record again and `asciinema upload agent/demo/chat-live.cast`. -->
-[![Praxis Policy Engine audit demo recording](https://asciinema.org/a/33FbaxMcjbGJKnHU.svg)](https://asciinema.org/a/33FbaxMcjbGJKnHU)
+[![Praxis Policy Engine audit demo recording](https://asciinema.org/a/CIdfHzlDLCswA0SN.svg)](https://asciinema.org/a/CIdfHzlDLCswA0SN)
 
 ## Run it
 
