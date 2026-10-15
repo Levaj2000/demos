@@ -56,16 +56,15 @@ project.
 ## Watch it run
 
 An LLM-driven session in front of the gateway, driven through
-[agent/chat.py](agent/chat.py): Bob's allowed lookup with its four signed
-records, Alice denied before the HR system sees the request, Bob's outbound
-email refused by session taint, Eve's SSN redacted in flight, then the ARE
-ledger receipt for the refused email verified on screen. The governing policy
-is shown beside each step, and the records pane shows each ruling become a
-signed record as it happens.
+[agent/chat.py](agent/chat.py) with the records pane beside it: Bob's allowed
+lookup with its four signed records, Alice denied before the HR system sees
+the request, Bob's outbound email refused by session taint, and Eve's SSN
+redacted in flight. Each ruling lands in the records pane as a signed, chained
+OCSF record the moment it is made, with the denials in red.
 
-<!-- Recorded with agent/demo/record_chat_demo.py (see agent/demo/README.md);
-     replace the link after `asciinema upload agent/demo/chat-demo.cast`. -->
-[![Praxis Policy Engine audit demo recording](https://asciinema.org/a/REPLACE_WITH_UPLOAD_ID.svg)](https://asciinema.org/a/REPLACE_WITH_UPLOAD_ID)
+<!-- Recorded with tools/record-live.sh (see agent/demo/README.md); to replace
+     it, record again and `asciinema upload agent/demo/chat-live.cast`. -->
+[![Praxis Policy Engine audit demo recording](https://asciinema.org/a/33FbaxMcjbGJKnHU.svg)](https://asciinema.org/a/33FbaxMcjbGJKnHU)
 
 ## Run it
 
