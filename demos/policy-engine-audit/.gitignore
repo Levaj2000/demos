@@ -8,3 +8,6 @@ gateway/target/
 __pycache__/
 *.pyc
 .venv/
+agent/demo/*.cast
+agent/demo/*.gif
+agent/demo/*.mp4
