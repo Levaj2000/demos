@@ -5,8 +5,8 @@ call which tool, what comes back and where it may go next. This demo adds
 the audit half of that story: every ruling the gateway makes leaves as a
 signed, hash-chained OCSF record through the
 [`ocsf-audit`](https://github.com/praxis-proxy/policy/tree/main/reference/plugins/ocsf-audit)
-sink, and an independent append-only ledger,
-[ARE](https://github.com/Levaj2000/are-immutable-ledger), receipts each one
+sink, and an independent append-only ledger, Jonathan Kershaw's
+[ARE](https://github.com/jkershawrh/are-immutable-ledger), receipts each one
 so an auditor can prove what happened without trusting the gateway.
 
 ```text
@@ -29,6 +29,43 @@ HR MCP server (:9100)                     ▼
 Same HR copilot, same personas and tools as the policy-engine demo. What
 is new is that every receipt comes from a record the gateway itself wrote
 and signed, and a second system keeps the chain.
+
+## Who built what
+
+This demo is a joint effort across three projects, and the credit splits
+the same way:
+
+- **The ARE immutable ledger and its proof layer** (hash-chained storage,
+  proof receipts, the proof explorer, the compose stack the demo starts)
+  were started and are maintained by Jonathan Kershaw. The canonical
+  repository is
+  [jkershawrh/are-immutable-ledger](https://github.com/jkershawrh/are-immutable-ledger);
+  `tools/fetch-ledger.sh` pins one commit of it.
+- **The Praxis policy engine, its executor audit seam and the enforcement
+  shown here** (identity, APL policy, CEL, session taint, token exchange,
+  redaction) are the Praxis team's work, in particular Frederico Araujo
+  and Teryl Taylor ([praxis-proxy/policy](https://github.com/praxis-proxy/policy)).
+- **The `ocsf-audit` sink, the AID-EMIT-1 alignment of the ledger's CPEX
+  adapter, and this demo** (gateway host, scenarios, chat walkthrough,
+  recorder) were built by Jeff Leva, with Kersh, Fred and Teryl reviewing.
+
+The integration discussions that led here were started by Jonathan Kershaw
+with the Praxis team; this directory is their outcome, not a separate
+project.
+
+## Watch it run
+
+An LLM-driven session in front of the gateway, driven through
+[agent/chat.py](agent/chat.py): Bob's allowed lookup with its four signed
+records, Alice denied before the HR system sees the request, Bob's outbound
+email refused by session taint, Eve's SSN redacted in flight, then the ARE
+ledger receipt for the refused email verified on screen. The governing policy
+is shown beside each step, and the records pane shows each ruling become a
+signed record as it happens.
+
+<!-- Recorded with agent/demo/record_chat_demo.py (see agent/demo/README.md);
+     replace the link after `asciinema upload agent/demo/chat-demo.cast`. -->
+[![Praxis Policy Engine audit demo recording](https://asciinema.org/a/REPLACE_WITH_UPLOAD_ID.svg)](https://asciinema.org/a/REPLACE_WITH_UPLOAD_ID)
 
 ## Run it
 
@@ -85,6 +122,7 @@ rule fires first; the domain rule catches the same email from a clean session.
 | `keycloak/` | The `cpex-demo` realm (bob, alice, eve, charlie) |
 | `agent/agent.py` | The scripted agent for scenario 03 |
 | `agent/chat.py` | The live LLM agent for presenting (vendored from praxis-proxy/demos), with [CHAT.md](agent/CHAT.md) |
+| `agent/demo/` | The tmux + asciinema recorder for the chat demo, with [its README](agent/demo/README.md) |
 | `scenarios/` | 01-06 and their shared helpers |
 | `tools/` | Gateway start/stop, ledger receipt lookup, pinned ledger and validator fetches, live record watcher |
 
@@ -144,9 +182,12 @@ The ledger side (`Dockerfile`, migrations, the CPEX adapter that turns
 records into receipts, the proof explorer that verifies chains) is not
 copied here. `tools/fetch-ledger.sh` checks the ledger repository out at one
 pinned commit into `.ledger/`, and the compose file and scenarios use that
-checkout, so the image, the schema and the adapter always match. The demo
-was first built there, as
-[`demo/praxis-audit`](https://github.com/Levaj2000/are-immutable-ledger/tree/main/demo/praxis-audit),
-where the earlier simulated-receipt version (`demo/joint-cpex`) also lives.
+checkout, so the image, the schema and the adapter always match. The
+canonical ledger is
+[jkershawrh/are-immutable-ledger](https://github.com/jkershawrh/are-immutable-ledger);
+the pin moves to a commit of it as soon as the demo's adapter changes land
+there (until then it names the fork they were developed on). The demo was
+first built in that repository, as `demo/praxis-audit`, where the earlier
+simulated-receipt version (`demo/joint-cpex`) also lives.
 `agent/chat.py` is the policy-engine demo's chat client with three small
 changes listed at the top of the file.

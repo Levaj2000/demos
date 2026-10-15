@@ -123,6 +123,12 @@ python3 .ledger/adapters/cpex/cpex_to_ledger.py --endpoint localhost:19292 --fil
 python3 .ledger/proof-explorer/proof.py verify --all
 ```
 
+## Recording it
+
+`demo/record_chat_demo.py` drives these beats through tmux and records them
+with asciinema, policy and records panes included; see
+[demo/README.md](demo/README.md).
+
 ## If something goes wrong
 
 | Symptom | Fix |
