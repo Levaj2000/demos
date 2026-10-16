@@ -8,8 +8,8 @@
 set -euo pipefail
 DEMO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$DEMO_DIR/.ledger"
-REPO="https://github.com/Levaj2000/are-immutable-ledger.git"
-COMMIT="24a41e9e27ec1886caff92142d6a2305352230bd"
+REPO="https://github.com/jkershawrh/are-immutable-ledger.git"
+COMMIT="544528f23cafce547c032936e07df23f9d41d677"
 
 if [ "$(git -C "$DEST" rev-parse HEAD 2>/dev/null || true)" != "$COMMIT" ]; then
     rm -rf "$DEST"
