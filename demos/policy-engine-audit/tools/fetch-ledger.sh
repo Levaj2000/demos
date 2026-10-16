@@ -8,6 +8,7 @@
 set -euo pipefail
 DEMO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$DEMO_DIR/.ledger"
+# v0.2.0 — canonical upstream
 REPO="https://github.com/jkershawrh/are-immutable-ledger.git"
 COMMIT="544528f23cafce547c032936e07df23f9d41d677"
 
