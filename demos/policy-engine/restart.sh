@@ -35,10 +35,28 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-# Which praxis config to run. Defaults to the Cedar demo (praxis.yaml);
-# set GATEWAY_CONFIG=praxis-cel.yaml or praxis-opa.yaml for the CEL and
-# OPA/Rego PDP variants.
-GATEWAY_CONFIG="${GATEWAY_CONFIG:-praxis.yaml}"
+# Which praxis config to run. Six configs cover the 2x3 matrix of IdP x PDP;
+# this defaults to Keycloak + OPA/Rego (praxis-opa.yaml):
+#
+#                   Cedar                    CEL                    OPA/Rego
+#   Keycloak        praxis.yaml              praxis-cel.yaml        praxis-opa.yaml
+#   IBM Verify      praxis-verify-cedar.yaml praxis-verify-cel.yaml praxis-verify-opa.yaml
+#
+# The *verify* configs also need USE_VERIFY=true so the scenario scripts mint
+# from the same IdP the gateway trusts — see praxis-verify-opa.yaml.
+GATEWAY_CONFIG="${GATEWAY_CONFIG:-praxis-opa.yaml}"
+
+# The Verify path's delegators read their client secret from the environment
+# (client_secret_source: {kind: env_var}) rather than from inline YAML, since
+# those are live tenant credentials. Source ./.env.verify when present so the
+# variable reaches the gateway process below. Gitignored; see
+# .env.verify.example.
+if [ -f .env.verify ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . ./.env.verify
+  set +a
+fi
 # Optional SPIRE overlay for workload identity (scenario 13). WITH_SPIRE=1 adds
 # docker-compose.spire.yml to every compose call, which also turns on Keycloak's
 # SPIFFE feature, and configures the realm to trust SPIRE once Keycloak is up.
@@ -101,6 +119,43 @@ step() { printf "\n\033[1;34m[restart-demo]\033[0m %s\n" "$*"; }
 ok()   { printf "  \033[1;32m✓\033[0m %s\n" "$*"; }
 warn() { printf "  \033[1;33m⚠\033[0m %s\n" "$*"; }
 die()  { printf "  \033[1;31m✗\033[0m %s\n" "$*"; exit 1; }
+
+# Fail fast on a Verify run with no client secret. Without this the gateway
+# starts, identity resolution succeeds, and the first scenario dies at
+# delegation.idp_rejected — which reads like a policy problem rather than a
+# missing environment variable.
+case "$GATEWAY_CONFIG" in
+  *verify*)
+    if [ -z "${VERIFY_GATEWAY_CLIENT_SECRET:-}" ]; then
+      echo "fatal: $GATEWAY_CONFIG needs VERIFY_GATEWAY_CLIENT_SECRET." >&2
+      echo "  cp .env.verify.example .env.verify   # then fill in the secret" >&2
+      exit 1
+    fi
+    # The policy-verify-*.yaml documents are generated from their .tmpl: the
+    # tenant URL and the exchange client_id are tenant-specific, and Verify
+    # GENERATES client ids, so a rebuilt tenant invalidates whatever was
+    # committed. Praxis has no env-var indirection for client_id (only for the
+    # secret), so substitution happens here, before the gateway reads the file.
+    # Rendering is idempotent and quiet when nothing changed.
+    #
+    # Render only the variant this config actually loads, so a CEL run does not
+    # fail on an unrelated broken template.
+    case "$GATEWAY_CONFIG" in
+      *verify-cel*)   VERIFY_VARIANT=cel ;;
+      *verify-cedar*) VERIFY_VARIANT=cedar ;;
+      *verify-opa*)   VERIFY_VARIANT=opa ;;
+      *)
+        # A *verify* config with no recognised PDP suffix. Render everything
+        # rather than guess: the cost is two extra renders, and the alternative
+        # is starting the gateway against a stale file.
+        VERIFY_VARIANT="" ;;
+    esac
+    step "rendering $GATEWAY_CONFIG's policy config from its template"
+    # shellcheck disable=SC2086 # intentionally unquoted: empty means "all"
+    ./render-verify-config.sh $VERIFY_VARIANT \
+      || die "could not render the policy config for $GATEWAY_CONFIG"
+    ;;
+esac
 
 # 1. Kill any existing gateway on :8090.
 step "stopping any existing gateway on :8090"

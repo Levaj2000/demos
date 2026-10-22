@@ -1,4 +1,6 @@
-# gateway stdout/stderr captured by restart.sh
+# gateway stdout/stderr captured by restart.sh. The real file lives in .gwlog/
+# and gateway.log is a symlink to it, to keep log writes out of the directory
+# the gateway's config watcher watches — see the GATEWAY_LOG note in restart.sh.
 gateway.log
 # gateway stdout/stderr captured by restart.sh. The real file lives in .gwlog/
 # and gateway.log is a symlink to it, to keep log writes out of the directory
@@ -10,6 +12,22 @@ agent/.venv/
 __pycache__/
 *.pyc
 .env
+# post deployment variables installed by provisioner
+post_deploy_variables.json
+# IBM Verify tenant client secret for the Verify IdP path
+.env.verify
+
+# Generated from the matching .yaml.tmpl by render-verify-config.sh, one per PDP
+# variant on the Verify path. The tenant URL and exchange client_id are
+# tenant-specific, and Verify generates client ids, so a rendered file is
+# per-tenant rather than shared. Edit the .tmpl.
+#
+# NOTE: policy-verify-opa.yaml was tracked before the template existed — its
+# ignore only takes effect after `git rm --cached policy-verify-opa.yaml`. The
+# cel and cedar files were never tracked, so they need no such step.
+policy-verify-opa.yaml
+policy-verify-cel.yaml
+policy-verify-cedar.yaml
 
 # SPIRE server bundle exported by restart.sh for the agent to bootstrap from
 spire/agent/bootstrap.crt

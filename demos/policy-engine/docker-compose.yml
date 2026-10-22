@@ -99,7 +99,7 @@ services:
       - "5001:5001"
 
   valkey:
-    image: valkey/valkey:8
+    image: docker.io/valkey/valkey:8
     container_name: policy-demo-valkey
     ports:
       - "6379:6379"
