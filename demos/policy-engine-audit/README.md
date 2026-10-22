@@ -153,10 +153,14 @@ around here; the first needs an upstream fix.
 1. **The sink could not load beside any route.** Under `dispatch: policy`
    (the default) the APL visitor rejected a hookless audit sink as "no step
    names `ocsf-audit`, so it can never run", and naming it in `run()` denied
-   every request. Fixed in
-   [praxis-proxy/policy#210](https://github.com/praxis-proxy/policy/pull/210);
-   `gateway/Cargo.toml` pins that branch's commit on the author's fork until
-   it merges, then moves to the upstream commit.
+   every request. Fixed upstream in
+   [praxis-proxy/policy#210](https://github.com/praxis-proxy/policy/pull/210),
+   which landed on the policy 0.5.0 line. Praxis 0.7.x depends on
+   praxis-policy 0.4.1, and a `[patch.crates-io]` entry must match that
+   version, so `gateway/Cargo.toml` keeps the fix's 0.4.x commit on the
+   author's fork until a Praxis release depends on praxis-policy 0.5.x
+   (see the comment in that file). The repin is then a version bump, not a
+   code change.
 2. **No keyed content digests through Praxis.** Praxis 0.7.4 registers no
    secret provider backends with the engine it builds, so
    `content_provenance_key` cannot name a secret. The demo uses `unkeyed`
@@ -183,9 +187,10 @@ copied here. `tools/fetch-ledger.sh` checks the ledger repository out at one
 pinned commit into `.ledger/`, and the compose file and scenarios use that
 checkout, so the image, the schema and the adapter always match. The
 canonical ledger is
-[jkershawrh/are-immutable-ledger](https://github.com/jkershawrh/are-immutable-ledger);
-the pin moves to a commit of it as soon as the demo's adapter changes land
-there (until then it names the fork they were developed on). The demo was
+[jkershawrh/are-immutable-ledger](https://github.com/jkershawrh/are-immutable-ledger),
+and the pin is its v0.2.0 commit, which carries the demo's adapter changes.
+The pin is a commit rather than a tag so a moved tag cannot change what the
+demo builds. The demo was
 first built in that repository, as `demo/praxis-audit`, where the earlier
 simulated-receipt version (`demo/joint-cpex`) also lives.
 `agent/chat.py` is the policy-engine demo's chat client with three small
