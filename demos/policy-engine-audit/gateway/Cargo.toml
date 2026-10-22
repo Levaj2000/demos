@@ -19,7 +19,14 @@
 # The pin is praxis-proxy/policy main (de93b87, the #171 merge) plus one fix
 # on Levaj2000/policy: under `dispatch: policy` the APL visitor rejected a
 # hookless audit sink as "can never run", so the sink could not load beside
-# any route. Repin to praxis-proxy/policy once that fix lands upstream.
+# any route. That fix is upstream as praxis-proxy/policy#210, but it landed
+# on the 0.5.0 line, and a `[patch.crates-io]` entry must match the version
+# the dependent asks for: patching praxis-proxy's `praxis-policy = "0.4.1"`
+# with a 0.5.0 checkout leaves two praxis-policy-core copies in the lockfile
+# and the sink is no longer the executor's handler. The pin therefore stays
+# on the fork's 0.4.x commit until a praxis-proxy release depends on
+# praxis-policy 0.5.x; then both lines move to published crates and the
+# patch section goes away.
 
 [package]
 name = "praxis-audit-gateway"
