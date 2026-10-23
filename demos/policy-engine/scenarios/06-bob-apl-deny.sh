@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Bob (HR, group=hr) tries to search github repos. APL's coarse
 # gate fails immediately — Bob isn't in engineering or security.
-# The deny happens BEFORE Cedar runs, before any IdP call.
+# The deny happens BEFORE the PDP runs, before any IdP call.
 #
 # This shows the "fast path" in the policy: cheap predicates run
 # first, expensive PDP / IdP work only happens for requests that
@@ -9,7 +9,7 @@
 #
 #   Layer 1 — APL gate `require(team.engineering | team.security)`
 #             → FAILS (Bob is in team.hr)
-#   Layers 2-4 — never reached. Cedar never invoked, IdP never
+#   Layers 2-4 — never reached. PDP never invoked, IdP never
 #             called, no token-exchange round-trip.
 #
 # Result: HTTP 200 + JSON-RPC error code -32001, data.violation =

@@ -11,7 +11,8 @@ See also [experimental builds](https://github.com/praxis-proxy/experimental).
 |------|-------------|
 | [anthropic-messages](demos/anthropic-messages/) | Route Anthropic `/v1/messages` requests to any backend — Anthropic API, vLLM, or OpenAI-compatible — with optional format transformation via composable filters. |
 | [authpolicy-transpiler](demos/authpolicy-transpiler/) | Offline CLI that transpiles a Kuadrant `AuthPolicy` into Praxis policy config (a `policy`-filter block plus a Praxis Policy Engine policy document), with a coverage report showing what maps to CEL and what is out of scope. |
-| [policy-engine](demos/policy-engine/) | Policy enforcement on MCP traffic: authorization flows connecting identity to access control decisions with Cedar or CEL PDP, delegation, out-of-band elicitation, data redaction, and session tainting. |
+| [policy-engine](demos/policy-engine/) | Identity-aware policy enforcement on MCP tool calls with Cedar, CEL, or OPA/Rego: user and workload authentication, scoped token delegation, trusted identity headers, human approval, data redaction, PII blocking, and session taint controls. An optional SPIRE layer demonstrates node and workload attestation. |
+| [policy-engine-audit](demos/policy-engine-audit/) | Audit trail for the policy engine: every allow, deny or redact leaves the gateway as a signed, hash-chained OCSF record through the `ocsf-audit` sink, and an independent append-only ledger receipts each one. Live HR-copilot chat with a prompt-injection beat, plus tamper and restart proofs. |
 | [ppe-vault-delegation](demos/ppe-vault-delegation/) | Per-user GitHub credential delegation through Praxis AI and PPE using a self-hosted Vault Community dev server. |
 | [openai-responses-stateless](demos/openai-responses-stateless/) | Stateless passthrough for OpenAI `/v1/responses` with `store: false`. Praxis classifies the request, detects stateless mode, and proxies directly to vLLM — no buffering, no persistence, no transformation. |
 | [openai-responses-codex-passthrough](demos/openai-responses-codex-passthrough/) | Live Codex CLI passthrough to the OpenAI Responses API. Demonstrates model alias rewriting, default injection, effective-model headers, SSE, and a Codex-owned tool loop. Run the [all-in-one narrated demo](demos/openai-responses-codex-passthrough/README.md#all-in-one-recommended) or each [step individually](demos/openai-responses-codex-passthrough/README.md#step-by-step-multi-terminal). |
@@ -39,6 +40,7 @@ runtime assertions. Each demo requires a local
 | [grid-workload-inference](demos/grid-workload-inference/) | Cluster-local workload entry without public ingress |
 | [grid-llmd-pool-metrics](demos/grid-llmd-pool-metrics/) | EPP telemetry, Grid scoring, A-to-B-to-A capacity failover |
 | [grid-combined-site](demos/grid-combined-site/) | Consumer and secured provider roles colocated at each site |
+| [grid-llmd-litellm](demos/grid-llmd-litellm/) | Enrolled two-site grid over llm-d, routed by grid_site_route, behind a litellm front door that owns caller auth |
 
 ## Grid Labs and Guides
 

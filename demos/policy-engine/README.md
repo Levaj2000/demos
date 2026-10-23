@@ -151,6 +151,9 @@ To check every scenario instead of watching the tour:
 ```bash
 ./run-scenarios.sh                 # the running gateway
 ./run-scenarios.sh --all-configs   # Cedar, then CEL, then OPA
+
+# same PDP sweep against IBM Verify instead of Keycloak
+USE_VERIFY=true ./run-scenarios.sh --all-configs
 ```
 
 The equivalent steps, spelled out:
@@ -244,7 +247,8 @@ rather than one the caller sent.
 | 10 | Bob adjusts compensation by ≤ $10k | Below the threshold: `adjust_compensation` applies immediately, no approval |
 | 11 | Bob adjusts compensation by > $10k | Human-in-the-loop: the gateway suspends with `-32120`, Alice approves out-of-band (CIBA), then it applies |
 | 12 | Bob calls `get_compensation`, then again spoofing an asserted header | `assertions:` renders identity into upstream headers, strips his raw token, and refuses to forward a header he set himself |
-| 13 | The agent calls `get_headcount` with only its SPIFFE JWT-SVID | Workload identity: the route authenticates by the SVID alone, and two-leg delegation obtains a `workday-api` token. No person involved. Needs `WITH_SPIRE=1`; skipped otherwise |
+| 13 | The agent calls `get_headcount` with only its SPIFFE JWT-SVID | Workload identity: the agent gets its SVID by attestation, the route authenticates by the SVID alone, and two-leg delegation obtains a `workday-api` token. No person involved. An unregistered process gets no SVID. Needs `WITH_SPIRE=1`; skipped otherwise |
+| 14 | A governed IBM Verify **agent identity** calls `search_repos_agent` as itself, then an admin **suspends** it | Agent governance: the agent is a record in the Agent Registry with an owner, tags and a lifecycle status. It authenticates with `client_credentials` — no human, no user token — and the gateway refuses it the moment its status is not `ACTIVE`. Verify *records* the status but does not enforce it at the token endpoint (a suspended agent still mints tokens), so policy is the kill switch. Needs `USE_VERIFY=true` and a provisioned agent; skipped otherwise |
 
 Scenarios 10 and 11 exercise the human-in-the-loop flow described in
 [Human-in-the-loop: manager approval](#human-in-the-loop-manager-approval)
@@ -255,7 +259,7 @@ below. Scenario 11 needs the full stack (Keycloak CIBA plus the auth-channel UI)
 ## Alternatives: CEL or OPA instead of Cedar
 
 Scenarios 04 and 05 gate `search_repos` through a policy decision point. The
-default config (`policy.yaml`) uses Cedar. Two alternate configs express the same
+default config (`policy-cedar.yaml`) uses Cedar. Two alternate configs express the same
 decision with CEL (Common Expression Language) and with OPA/Rego:
 
 ```bash
@@ -270,7 +274,7 @@ GATEWAY_CONFIG=praxis-opa.yaml ./restart.sh
 
 The backends differ in how the rule is authored, not in the outcome:
 
-| | Cedar (`policy.yaml`) | CEL (`policy-cel.yaml`) | OPA (`policy-opa.yaml`) |
+| | Cedar (`policy-cedar.yaml`) | CEL (`policy-cel.yaml`) | OPA (`policy-opa.yaml`) |
 |---|---|---|---|
 | Where the rule lives | `policy_text` block (Cedar policy set) | inline `cel: { expr }` on the route | `modules:` Rego text, queried by rule path |
 | The rule | `permit(...) when { principal.roles.contains("engineer") && resource.visibility == "internal" }` | `(has(role.engineer) && role.engineer && args.visibility == "internal") \|\| (has(role.security) && role.security)` | `allow if { input.role.engineer == true; input.args.visibility == "internal" }` plus a second `allow` for security |
@@ -286,6 +290,58 @@ Both PDP backends are compiled into the same binary. The config's
 `pdp: { kind: ... }` and the route's `cedar:` or `cel:` step select which one
 runs. The CEL step also shows an `on_deny:` reaction attaching a human reason and
 a stable violation code; `on_deny` and `on_allow` work on any PDP step.
+
+## Swapping the IdP: IBM Verify instead of Keycloak
+
+The PDP is one axis; the identity provider is another, and they are independent.
+Each of the three PDP configs has an IBM Verify counterpart, giving six configs:
+
+| | Cedar | CEL | OPA/Rego |
+|---|---|---|---|
+| **Keycloak** (local, `:8081`) | `praxis.yaml` | `praxis-cel.yaml` | `praxis-opa.yaml` |
+| **IBM Verify** (live tenant) | `praxis-verify-cedar.yaml` | `praxis-verify-cel.yaml` | `praxis-verify-opa.yaml` |
+
+```bash
+USE_VERIFY=true GATEWAY_CONFIG=praxis-verify-cedar.yaml ./restart.sh
+./scenarios/04-alice-internal-allow.sh        # 200 allow
+./scenarios/05-alice-external-cedar-deny.sh   # -32001 deny, violation cedar.default_deny
+```
+
+**Both switches are required, and they cover different halves of the path:**
+`GATEWAY_CONFIG` picks which IdP the *gateway* validates and exchanges against;
+`USE_VERIFY` picks which IdP the *scenario scripts* mint from. Mismatch them and
+the failure is at least legible — minting from Keycloak against a Verify-only
+gateway yields `auth.untrusted_issuer`.
+
+The argument here is what does *not* change. Diff a Verify policy document
+against its Keycloak sibling and every difference falls in the identity and
+delegation blocks — the routes, the PDP rule, the PII scanner, the redaction
+rules, the taint labels and the audit logger are identical:
+
+```bash
+diff policy-verify-cedar.yaml policy-cedar.yaml
+```
+
+Three things to know before demoing the Verify path:
+
+- **The policy documents are generated.** `policy-verify-*.yaml` is rendered
+  from the matching `.tmpl` by `render-verify-config.sh`, which `restart.sh`
+  calls automatically. Verify *generates* client ids, so a rebuilt tenant
+  invalidates any committed id. Edit the `.tmpl`; the rendered file is
+  gitignored and overwritten on every Verify run.
+- **Needs a tenant and a secret.** Copy `.env.verify.example` to `.env.verify`
+  and fill in `VERIFY_GATEWAY_CLIENT_SECRET`. The tenant URL and exchange
+  client id default to `post_deploy_variables.json`.
+- **Scenario 11 stays on Keycloak.** The CIBA plugin still points at Keycloak,
+  and the tenant blocks the grant besides (no `manager` claim). Scenario 10 is
+  under-threshold so it never reaches the plugin and passes either way.
+
+Two deltas change what can honestly be narrated on the Verify path, both
+properties of the tenant rather than the gateway, and neither changes a scenario
+outcome. They are documented at the top of each `policy-verify-*.yaml.tmpl`:
+`aud` is client-bound rather than request-scoped (say "exchanged token," not
+"audience-scoped token"), and the `search_repos` permissions check is a scope
+echo rather than an entitlement decision.
 
 ## Assertions: what the upstream is told
 
@@ -388,7 +444,7 @@ not the content, which is what separates it from scenario 07's content-based PII
 deny. Scenario 09 shows the taint cannot cross principals.
 
 Tainting is independent of the PDP, so 08 and 09 behave the same under both
-`policy.yaml`, `policy-cel.yaml`, and `policy-opa.yaml`.
+`policy-cedar.yaml`, `policy-cel.yaml`, and `policy-opa.yaml`.
 
 ### Where taint is stored
 
@@ -565,17 +621,99 @@ The SVID is a JWT, but not one Keycloak issued: SPIRE signs it (ES256) and it ve
 ### What `WITH_SPIRE=1` sets up
 
 - **`docker-compose.spire.yml`** adds `spire-server`, the SVID authority for trust domain `spiffe://policy.demo`, and `spire-oidc`, SPIRE's OIDC discovery provider, which publishes the signing keys at `/keys` (port 8443). It also turns on Keycloak's `spiffe` feature, which is still a preview feature in Keycloak 26.8 because the SPIFFE client authentication specification is still a draft.
+- **`spire-agent` and `workloads`** are where SVIDs come from. `restart.sh` exports the server's CA bundle and generates a one-time join token, and the agent uses them to join the server (node attestation). The `workloads` container is where the agent processes run, one user per agent. It shares the SPIRE agent's process namespace and Workload API socket, so when a process asks for an SVID, the agent reads its uid from the kernel and issues the SVID registered for that uid (workload attestation, with SPIRE's `unix` attestor). A process the registry does not name gets nothing.
+- **`spire/register-workloads.sh`** creates the registration entry: a process running as uid 1001 in `workloads` is `spiffe://policy.demo/ns/hr/sa/copilot`. The ID follows the usual namespace and service account shape, naming where the agent runs.
 - **`spire/setup-spiffe-idp.sh`** registers SPIRE as a native `spiffe` identity provider in the `policy-demo` realm. The provider type is `spiffe`, not `oidc`: the generic OIDC broker would check tokens through a UserInfo endpoint SPIRE does not serve, while the native provider verifies the SVID's signature against SPIRE's keys.
-- **`spire/configure-federated-client.sh`** creates the `hr-copilot-agent` client, which authenticates with `federated-jwt` bound to the SVID's subject (`spiffe://policy.demo/agent/hr-copilot`). It is separate from `hr-copilot`, the secret-based app client, because a Keycloak client has exactly one way to authenticate. It also adds `praxis-gateway` to the token's audience; without that, leg 2 fails with "Client is not within the token audience".
+- **`spire/configure-federated-client.sh`** creates the `hr-copilot-agent` client, which authenticates with `federated-jwt` bound to the SVID's subject (`spiffe://policy.demo/ns/hr/sa/copilot`). It is separate from `hr-copilot`, the secret-based app client, because a Keycloak client has exactly one way to authenticate. It also adds `praxis-gateway` to the token's audience; without that, leg 2 fails with "Client is not within the token audience".
 
-Both scripts are idempotent and take environment variables to override the realm, trust domain, client and SPIFFE ID; see the top of each script.
+The scripts are idempotent and take environment variables to override the realm, trust domain, client, SPIFFE ID and selector; see the top of each script.
 
-> **No attestation in the demo.** SVIDs here are minted directly with `spire-server jwt mint`, skipping the SPIFFE Workload API's node and workload attestation. In production the agent would fetch its SVID from the Workload API and never see the signing key.
+To fetch an SVID the way the agent does, from the Workload API as uid 1001:
+
+```bash
+./spire/fetch-svid.sh 1001 http://localhost:8081/realms/policy-demo
+```
+
+What this attests is narrow: the process runs as uid 1001, on a node that joined with the one-time token. It does not check what code the process runs, so any process with that uid in `workloads` would get the SVID, and the join token proves only that the agent was handed it. Real deployments attest nodes with something the platform vouches for (a cloud instance identity document, a Kubernetes service account token, a TPM) and select workloads on more than a uid: in Kubernetes the `k8s` attestor selects on namespace, service account and image, which is where the ID's shape comes from. The demo shows the issuance path, not an approved-software check.
 
 ### Checking Keycloak without the gateway
 
-- `spire/verify-svid-flow.sh` runs the whole chain in three calls (mint an SVID, use it as a client assertion for the base token, exchange that for a `workday-api` token) and prints the decoded claims at each step. It is the quickest way to confirm the Keycloak setup before running scenario 13.
+- `spire/verify-svid-flow.sh` runs the whole chain in three calls (fetch the agent's SVID, use it as a client assertion for the base token, exchange that for a `workday-api` token) and prints the decoded claims at each step. It is the quickest way to confirm the Keycloak setup before running scenario 13.
 - `spire/verify-dual-principal.sh` probes whether Keycloak accepts an agent credential as the RFC 8693 `actor_token` alongside a user's token, the "user, with the agent named as actor" case, and reports which form of actor token works.
+
+## Agent governance: the agent is approved, not just identified
+
+Scenario 13 answers *"is this really the agent?"* — SPIRE attests the process
+and issues an SVID, and a process that fails attestation gets nothing. What it
+cannot answer is *"should this agent be running at all, today?"* There is no
+registry of agents, no owner, no status, and no way for a human to revoke one
+without editing registration entries or waiting out a TTL.
+
+Scenario 14 is that missing half. The agent is an **IBM Verify Agent
+Identity**: a record in the Agent Registry with a display name, an owner, tags,
+and a lifecycle status (`ACTIVE` / `SUSPENDED` / `UNDER_REVIEW` / `DEFAULT`). It
+authenticates as itself with `client_credentials` — no human, no user token, no
+`Authorization` header — and calls a tool on its own authority. Then an admin
+suspends it in the console, and the next call fails.
+
+```bash
+USE_VERIFY=true GATEWAY_CONFIG=praxis-verify-opa.yaml ./restart.sh
+./verify/import-verify-clients.sh                 # creates the agent + its registry record
+USE_VERIFY=true ./scenarios/14-verify-agent-identity.sh
+
+./verify/set-agent-status.sh SUSPENDED            # flip it by hand, mid-demo
+./verify/set-agent-status.sh                      # report the current status
+./verify/set-agent-status.sh ACTIVE
+```
+
+**The gateway enforces the status; Verify records it.** This is worth stating
+plainly because it is the one counter-intuitive part: IBM Verify does *not* gate
+token issuance on agent status. A `SUSPENDED` agent still mints tokens, and
+tokens minted before the suspend stay valid — verified against a live tenant.
+So the kill switch cannot live at the IdP.
+
+That is also IBM's own architecture rather than a workaround. The
+Agent-Identity-with-Vault cookbook has the token exchange succeed while the
+*resource* denies for a missing or invalid agent registration. Praxis is the
+resource in this demo, so `run(agent-status)` is where the refusal happens:
+the gateway reads `/v1.0/Agents/{id}` and denies with `auth.agent_suspended`
+unless the status is `ACTIVE`.
+
+**Reading the status and changing it are two different credentials.** Both are
+created by `import-verify-clients.sh`, each holding exactly one entitlement:
+
+| Client | Entitlement | Held by |
+|---|---|---|
+| reader | `readAgents` | the gateway, per request |
+| operator | `manageAgentStatus` | `set-agent-status.sh` / a human admin |
+
+The gateway can read an agent record and nothing else — `PUT /v1.0/Agents` is
+403 for it. That is the point: the gateway is the component most exposed to
+agent traffic, and if it could also change status, a compromised gateway could
+re-enable the agent its own policy had just suspended. The kill switch would be
+its own bypass.
+
+`manageAgentStatus` is narrow in the other direction — it permits a status
+change and nothing else, not even renaming the agent (403 `CSINH2507E`). The
+tenant-admin credentials are **provisioning-only**; nothing on the demo path
+reads them.
+
+**The revocation window is real and is a configured number.** The plugin caches
+the status, and `cache_ttl_seconds` is how long a suspended agent keeps working.
+Scenario 14 waits it out rather than hiding it. SPIFFE has the same shape of
+problem with SVID TTL; neither mechanism is instant, and both windows are
+something an operator chooses.
+
+**Neither scenario ports to the other IdP.** Keycloak's SPIFFE-native client
+authentication (`providerId: spiffe`, `client_assertion_type: …jwt-spiffe`) has
+no IBM Verify counterpart, and Verify's Agent Registry has no Keycloak
+counterpart. 13 is Keycloak-only, 14 is Verify-only, and each reports itself
+skipped on the other path. They make different points about agent identity and
+the demo keeps both.
+
+One convergence worth knowing about but not built here: Verify's Agent Registry
+accepts `authMethods` of type `svid-jwt` and `svid-x509`, so it can *govern* a
+SPIFFE identity rather than compete with one. See the brainstorm's finding E9.
 
 ## Notes
 
@@ -589,7 +727,7 @@ implementations, and `gateway/src/main.rs` hands them to the policy filter with
 
 That makes this demo the worked example of extending the engine. To use your own
 PII detector or point audit at a SIEM, replace one line in
-`register_host_plugins()` — `policy.yaml` does not change, because the policy names
+`register_host_plugins()` — `policy-cedar.yaml` does not change, because the policy names
 a `kind:` and the host decides what implements it. A `kind:` with no registration
 fails at startup naming the kind, rather than loading a gateway whose PII gate
 silently never runs.
@@ -608,20 +746,24 @@ the padding, so the wire stays correct. This is documented in the filter source.
 
 | File or directory | Purpose |
 |---|---|
-| `praxis.yaml` | Praxis listener and filter chain (`mcp` -> `policy` -> `router` -> `load_balancer`); loads `policy.yaml` |
-| `policy.yaml` | Policy document: plugins, routes, Cedar PDP policy text |
+| `praxis.yaml` | Praxis listener and filter chain (`mcp` -> `policy` -> `router` -> `load_balancer`); loads `policy-cedar.yaml` |
+| `policy-cedar.yaml` | Policy document: plugins, routes, Cedar PDP policy text |
 | `praxis-cel.yaml` | Same listener as `praxis.yaml`, loads `policy-cel.yaml`. Run via `GATEWAY_CONFIG=praxis-cel.yaml` |
 | `policy-cel.yaml` | CEL variant: `search_repos` uses an inline `cel:` expression |
 | `praxis-opa.yaml` | Same listener as `praxis.yaml`, loads `policy-opa.yaml`. Run via `GATEWAY_CONFIG=praxis-opa.yaml` |
 | `policy-opa.yaml` | OPA variant: a Rego module under `pdp:`, queried by `search_repos` with `opa: { query }` |
+| `praxis-verify-{cedar,cel,opa}.yaml` | IBM Verify listeners, one per PDP. Run via `USE_VERIFY=true GATEWAY_CONFIG=...` (see "Swapping the IdP") |
+| `policy-verify-{cedar,cel,opa}.yaml.tmpl` | Verify policy documents. **Edit these**, not the rendered `.yaml` — the tenant URL and exchange client id are substituted in |
+| `render-verify-config.sh` | Render one or all Verify policy documents from their templates. `restart.sh` calls it automatically; `--check` fails if any is stale |
+| `.env.verify.example` | Template for `.env.verify`, which carries `VERIFY_GATEWAY_CLIENT_SECRET` (gitignored — a live tenant credential) |
 | `docker-compose.yml` | Keycloak (8081), hr-mcp (9100), valkey (6379), and auth-channel (5001) |
 | `keycloak/realm-export.json` | Realm with users, clients, STE v2, and CIBA + the channel SPI |
 | `hr-mcp-server/` | Python mock MCP server (Dockerfile and `server.py`), incl. `adjust_compensation` and the `/_requests` recorder the scenarios assert against |
 | `auth-channel/` | CIBA approval UI (`:5001`, "the manager's phone") for Approve / Deny; dev `/pending` + `/approve` API for scripted approval |
 | `scenarios/*.sh` | The thirteen scenarios (08/09 session taint, 10/11 manager approval, 12 assertions, 13 workload identity) and `_lib.sh` helpers plus its `expect_*` assertions |
 | `docker-compose.spire.yml` | Optional SPIRE layer for scenario 13: `spire-server`, `spire-oidc` (8443), and Keycloak's `spiffe` feature. Added by `WITH_SPIRE=1` |
-| `spire/` | SPIRE server and discovery-provider config, the Keycloak setup scripts for the SPIFFE identity provider and the agent's federated client, and two checks that exercise Keycloak directly |
-| `run-scenarios.sh` | Run every scenario, optionally across all three PDP configs, and report pass/fail |
+| `spire/` | SPIRE server, agent and discovery-provider config, the `workloads` image, the workload registration and SVID fetch scripts, the Keycloak setup scripts for the SPIFFE identity provider and the agent's federated client, and two checks that exercise Keycloak directly |
+| `run-scenarios.sh` | Run every scenario, optionally across all three PDP configs (`--all-configs`, Keycloak or Verify per `USE_VERIFY`), and report pass/fail |
 | `mint-token.sh` | Mint a user or client token via Keycloak |
 | `verify-token-exchange.sh` | Check that STE v2 is configured correctly |
 | `walkthrough.sh` | Narrated tour of the core scenarios |
@@ -636,7 +778,7 @@ The filter source is in the praxis repository at
 [`filter/src/builtins/http/security/policy/`](https://github.com/praxis-proxy/praxis/tree/main/filter/src/builtins/http/security/policy),
 behind the `policy-engine` Cargo feature on `praxis-proxy-filter` (registered
 under the YAML filter name `policy`). That feature brings in all three decision
-points — Cedar, CEL and OPA — so one binary serves `policy.yaml`, `policy-cel.yaml`
+points — Cedar, CEL and OPA — so one binary serves `policy-cedar.yaml`, `policy-cel.yaml`
 and `policy-opa.yaml`. See the filter's own module docs there for configuration and
 internals.
 
