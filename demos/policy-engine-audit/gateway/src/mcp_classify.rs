@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Praxis Contributors
 
 //! `mcp_classify`: the minimum MCP classification the `policy` filter needs.
 //!
@@ -16,12 +17,20 @@ use praxis_filter::{
     BodyAccess, BodyMode, FilterAction, FilterError, HttpFilter, HttpFilterContext, export_filters,
 };
 
-/// Upper bound on a buffered tool call. The demo's payloads are tiny.
-const MAX_BODY_BYTES: usize = 256 * 1024;
+// -----------------------------------------------------------------------------
+// Constants
+// -----------------------------------------------------------------------------
 
+/// Upper bound on a buffered tool call. The demo's payloads are tiny.
+const MAX_BODY_BYTES: usize = 262_144; // 256 KiB
+
+/// The `mcp_classify` HTTP filter. Stateless: every request is classified
+/// from its own body.
 struct McpClassify;
 
 impl McpClassify {
+    /// Factory for `export_filters!`. The filter takes no settings, so the
+    /// config value is ignored.
     #[expect(clippy::unnecessary_wraps, reason = "factory signature")]
     fn from_config(_config: &serde_yaml::Value) -> Result<Box<dyn HttpFilter>, FilterError> {
         Ok(Box::new(Self))
@@ -62,7 +71,7 @@ impl HttpFilter for McpClassify {
         }
         let Some(rpc) = body
             .as_ref()
-            .and_then(|b| serde_json::from_slice::<serde_json::Value>(b).ok())
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(bytes).ok())
         else {
             // Not JSON-RPC: leave the metadata unset and let the policy
             // filter's `require_protocol_metadata` gate reject it.
@@ -74,7 +83,7 @@ impl HttpFilter for McpClassify {
         }
         let name = rpc
             .get("params")
-            .and_then(|p| p.get("name").or_else(|| p.get("uri")))
+            .and_then(|params| params.get("name").or_else(|| params.get("uri")))
             .and_then(serde_json::Value::as_str);
         if let Some(name) = name {
             ctx.set_metadata("mcp.name", name);
